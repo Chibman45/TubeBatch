@@ -1,0 +1,200 @@
+{
+  "entities": {
+    "DownloadBatch": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "DownloadBatch",
+      "type": "object",
+      "description": "Represents a single batch download job initiated by a user, containing multiple video download requests and tracking its overall progress and status.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the DownloadBatch entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to the user who initiated this batch. (Relationship: User 1:N DownloadBatch)"
+        },
+        "uploadFileName": {
+          "type": "string",
+          "description": "The original file name of the CSV uploaded by the user for this batch."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the overall download batch (e.g., 'PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'ARCHIVING')."
+        },
+        "totalVideos": {
+          "type": "number",
+          "description": "The total number of videos identified for download in this batch from the uploaded CSV."
+        },
+        "completedVideos": {
+          "type": "number",
+          "description": "The count of videos that have successfully completed downloading within this batch."
+        },
+        "failedVideos": {
+          "type": "number",
+          "description": "The count of videos that failed to download within this batch."
+        },
+        "startTime": {
+          "type": "string",
+          "description": "Timestamp when the batch processing officially started.",
+          "format": "date-time"
+        },
+        "endTime": {
+          "type": "string",
+          "description": "Timestamp when the batch processing officially finished (either completed or failed).",
+          "format": "date-time"
+        },
+        "zipArchiveUrl": {
+          "type": "string",
+          "description": "The URL or path to the final ZIP archive containing all successfully downloaded videos for this batch.",
+          "format": "uri"
+        },
+        "errorMessage": {
+          "type": "string",
+          "description": "A message detailing the reason if the overall batch processing failed."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp indicating when this batch record was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp indicating when this batch record was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "status",
+        "totalVideos",
+        "createdAt"
+      ]
+    },
+    "VideoDownloadEntry": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "VideoDownloadEntry",
+      "type": "object",
+      "description": "Represents an individual YouTube video download request and its specific progress and status within a larger download batch.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the VideoDownloadEntry entity."
+        },
+        "batchId": {
+          "type": "string",
+          "description": "Reference to the parent DownloadBatch this video belongs to. (Relationship: DownloadBatch 1:N VideoDownloadEntry)"
+        },
+        "originalUrl": {
+          "type": "string",
+          "description": "The original YouTube video URL provided in the CSV for this entry.",
+          "format": "uri"
+        },
+        "desiredTitle": {
+          "type": "string",
+          "description": "The user-specified title for the downloaded video file, as provided in the CSV."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of this individual video download (e.g., 'PENDING', 'DOWNLOADING', 'COMPLETED', 'FAILED')."
+        },
+        "progress": {
+          "type": "number",
+          "description": "The current download progress of the video, represented as a percentage (0-100)."
+        },
+        "filePath": {
+          "type": "string",
+          "description": "The storage path or identifier for the successfully downloaded video file."
+        },
+        "errorMessage": {
+          "type": "string",
+          "description": "A message detailing the reason if this individual video download failed."
+        },
+        "downloadStartTime": {
+          "type": "string",
+          "description": "Timestamp when the download process for this specific video began.",
+          "format": "date-time"
+        },
+        "downloadEndTime": {
+          "type": "string",
+          "description": "Timestamp when the download process for this specific video finished.",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp indicating when this video download entry was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp indicating when this video download entry was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "batchId",
+        "originalUrl",
+        "desiredTitle",
+        "status",
+        "createdAt"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}/downloadBatches/{batchId}",
+        "definition": {
+          "entityName": "DownloadBatch",
+          "schema": {
+            "$ref": "#/backend/entities/DownloadBatch"
+          },
+          "description": "Stores individual download batch jobs initiated by a user. This collection is user-specific, with the 'userId' parameter in the path representing the owner. Authorization is based on the path's 'userId'.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user who owns this download batch."
+            },
+            {
+              "name": "batchId",
+              "description": "The unique identifier for the specific download batch."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/downloadBatches/{batchId}/videoDownloadEntries/{entryId}",
+        "definition": {
+          "entityName": "VideoDownloadEntry",
+          "schema": {
+            "$ref": "#/backend/entities/VideoDownloadEntry"
+          },
+          "description": "Stores individual video download entries belonging to a specific download batch. Includes a denormalized 'userId' field from its parent DownloadBatch for Authorization Independence, enabling direct ownership checks without cross-document reads.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user who owns the parent download batch and this video entry."
+            },
+            {
+              "name": "batchId",
+              "description": "The unique identifier of the parent download batch to which this video entry belongs."
+            },
+            {
+              "name": "entryId",
+              "description": "The unique identifier for this specific video download entry."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to be highly secure, scalable, and debuggable by strictly adhering to the core design principles, especially Authorization Independence, Structural Segregation, and Path-Based Ownership.\n\n**Authorization Independence:**\n1.  **DownloadBatch:** Documents are stored under `/users/{userId}/downloadBatches/{batchId}`. This structure inherently makes the `userId` available in the path, allowing security rules to verify ownership directly as `request.auth.uid == userId`. No `get()` operations are needed on a parent document to determine ownership, thus ensuring authorization independence for this collection.\n2.  **VideoDownloadEntry:** Documents are stored under `/users/{userId}/downloadBatches/{batchId}/videoDownloadEntries/{entryId}`. To achieve authorization independence for these subcollection documents, the `userId` of the owning user is **denormalized** and explicitly stored within each `VideoDownloadEntry` document. This means security rules can directly check `request.auth.uid == resource.data.userId` without needing to fetch the parent `DownloadBatch` document, which would otherwise be a costly and non-atomic operation.\n\nThis denormalization ensures that all authorization checks are atomic and self-contained within the `resource.data` of the document being accessed, simplifying rules and improving performance.\n\n**QAPs (Rules are not Filters):**\n1.  **DownloadBatch List Operations:** By using the path `/users/{userId}/downloadBatches`, `list` operations issued from a client will naturally query `firestore.collection('users').doc(auth.uid).collection('downloadBatches')`. Security rules can then simply enforce `allow list: if request.auth.uid == userId;`, ensuring that users can only retrieve a list of their own batches without relying on database-level filtering. The path itself acts as a strong pre-filter.\n2.  **VideoDownloadEntry List Operations:** Similarly, for `VideoDownloadEntry` documents at `/users/{userId}/downloadBatches/{batchId}/videoDownloadEntries`, a client query for a specific batch's entries will use `firestore.collection('users').doc(auth.uid).collection('downloadBatches').doc(batchId).collection('videoDownloadEntries')`. With the denormalized `userId` in each `VideoDownloadEntry` document, rules can enforce `allow list: if request.auth.uid == userId;`. This guarantees that users can only list video entries belonging to *their own* batches, and the path structure, combined with the denormalized `userId`, prevents unauthorized listing of other users' data.\n\n**Structural Segregation & Access Modeling:**\nAll data is private and user-owned. The hierarchical path structure (`/users/{userId}/...`) is consistently applied for all entities, directly mapping user ownership to data access. This ensures that all documents within these paths share the same security posture (owned by the `userId` in the path), simplifying security rules to a single, consistent `request.auth.uid == userId` check across collections."
+  }
+}

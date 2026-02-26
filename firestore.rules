@@ -1,0 +1,104 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * CORE PHILOSOPHY:
+     * This ruleset enforces a strict user-ownership model. Access to data is governed by the 
+     * user's identity as established by Firebase Authentication. We use a hierarchical 
+     * path-based security model where data is nested under a unique user identifier.
+     *
+     * DATA STRUCTURE:
+     * All application data is organized under the `/users/{userId}/` prefix. This ensures 
+     * clear logical partitioning of data and simplifies the enforcement of private access.
+     *
+     * KEY SECURITY DECISIONS:
+     * 1. Path-Based Ownership: The 'userId' parameter in the Firestore paths is the primary 
+     *    mechanism for authorization. Only the user whose UID matches this path parameter 
+     *    can access the underlying data.
+     * 2. Denormalization for Performance: To maintain high performance and avoid costly 
+     *    `get()` lookups in security rules, the 'userId' is denormalized (copied) into 
+     *    subcollection documents (e.g., VideoDownloadEntry). This allows for atomic 
+     *    authorization checks directly on the document being accessed.
+     * 3. Prototyping Flexibility: While authorization is strictly enforced (who can access), 
+     *    data schema validation is kept minimal to allow for rapid iteration on field names 
+     *    and types during development.
+     *
+     * STRUCTURAL SEGREGATION:
+     * By nesting all batches and entries within the user's document tree, we ensure 
+     * that users cannot list or discover data belonging to other users.
+     */
+
+    // --- Global Helper Functions ---
+
+    /**
+     * @description Checks if the request is made by an authenticated user.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * @description Validates that the authenticated user matches the provided userId.
+     * @param userId The UID to check against the current session.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * @description Combines ownership check with a check for document existence.
+     * Used for update and delete operations to prevent actions on non-existent data.
+     */
+    function isExistingOwner(userId) {
+      return resource != null && isOwner(userId);
+    }
+
+    // --- Collection Rules ---
+
+    /**
+     * @description Rules for individual download batch jobs.
+     * @path /users/{userId}/downloadBatches/{batchId}
+     * @allow (get) If the user is the owner of the path.
+     * @allow (create) If the user is the owner and provides their own userId in the data.
+     * @deny (list) If a user attempts to list batches belonging to a different userId.
+     * @principle Path-based ownership and relational integrity validation.
+     */
+    match /users/{userId}/downloadBatches/{batchId} {
+      allow get, list: if isOwner(userId);
+      
+      allow create: if isOwner(userId) 
+                    && request.resource.data.userId == userId;
+      
+      allow update: if isExistingOwner(userId) 
+                    && request.resource.data.userId == resource.data.userId;
+      
+      allow delete: if isExistingOwner(userId);
+
+      /**
+       * @description Rules for individual video entries within a batch.
+       * @path /users/{userId}/downloadBatches/{batchId}/videoDownloadEntries/{entryId}
+       * @allow (list) If the user is the owner of the parent path.
+       * @allow (update) If the user owns the document and the denormalized userId remains unchanged.
+       * @deny (create) If the userId in the document body does not match the authenticated user.
+       * @principle Authorization Independence via denormalized ownership fields.
+       */
+      match /videoDownloadEntries/{entryId} {
+        allow get, list: if isOwner(userId);
+        
+        allow create: if isOwner(userId) 
+                      && request.resource.data.userId == userId;
+        
+        allow update: if isExistingOwner(userId) 
+                      && request.resource.data.userId == resource.data.userId;
+        
+        allow delete: if isExistingOwner(userId);
+      }
+    }
+
+    // Explicitly deny access to any other paths by default.
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
