@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -31,14 +32,14 @@ export default function Home() {
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
 
-  // 1. Production Authentication: Ensure every user has a private UID (Anonymous Login)
+  // 1. Ensure anonymous login
   useEffect(() => {
     if (!isUserLoading && !user && auth) {
       initiateAnonymousSignIn(auth);
     }
   }, [user, isUserLoading, auth]);
 
-  // 2. Persistent History: Fetch the latest batch for this user to restore session
+  // 2. Fetch latest batch to restore session
   const batchesQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return query(
@@ -50,14 +51,14 @@ export default function Home() {
 
   const { data: batches, isLoading: isBatchesLoading } = useCollection(batchesQuery);
 
-  // Restore the latest batch ID if none is active
+  // Restore latest batch ID automatically
   useEffect(() => {
     if (batches && batches.length > 0 && !activeBatchId) {
       setActiveBatchId(batches[0].id);
     }
   }, [batches, activeBatchId]);
 
-  // 3. Real-time Batch Status: Fetch the active batch document
+  // 3. Active Batch Doc
   const activeBatchRef = useMemoFirebase(() => {
     if (!firestore || !user || !activeBatchId) return null;
     return doc(firestore, 'users', user.uid, 'downloadBatches', activeBatchId);
@@ -65,7 +66,7 @@ export default function Home() {
 
   const { data: activeBatch } = useDoc(activeBatchRef);
 
-  // 4. Real-time Sync: Fetch all video entries for the active batch
+  // 4. Video Entries for active batch
   const entriesQuery = useMemoFirebase(() => {
     if (!firestore || !user || !activeBatchId) return null;
     return query(
@@ -76,13 +77,12 @@ export default function Home() {
 
   const { data: entries, isLoading: isEntriesLoading } = useCollection(entriesQuery);
 
-  // Map Firestore data to UI state
   const items: VideoItem[] = (entries || []).map(e => ({
     id: e.id,
     url: e.originalUrl,
     title: e.desiredTitle,
     status: e.status as any,
-    progress: e.progress,
+    progress: e.progress || 0,
     error: e.errorMessage,
     size: e.filePath?.split('|')[1]
   }));
@@ -101,7 +101,7 @@ export default function Home() {
 
     setIsInitializing(true);
     try {
-      // Create persistent batch record
+      // Create batch record
       const batchRef = await addDocumentNonBlocking(
         collection(firestore, 'users', user.uid, 'downloadBatches'),
         {
@@ -116,10 +116,10 @@ export default function Home() {
       );
 
       if (batchRef) {
-        // Switch UI to the new batch immediately
+        // Switch view to the new batch immediately
         setActiveBatchId(batchRef.id);
         
-        // Persist individual video entries
+        // Persist video entries
         newItems.forEach((item) => {
           addDocumentNonBlocking(
             collection(firestore, 'users', user.uid, 'downloadBatches', batchRef.id, 'videoDownloadEntries'),
@@ -138,14 +138,14 @@ export default function Home() {
 
         toast({
           title: "Queue Created",
-          description: `Successfully loaded ${newItems.length} videos into your cloud workspace.`,
+          description: `Successfully loaded ${newItems.length} videos.`,
         });
       }
     } catch (err) {
       toast({
         variant: "destructive",
         title: "Upload Failed",
-        description: "Could not create the download batch in the database.",
+        description: "Could not sync data with the database.",
       });
     } finally {
       setIsInitializing(false);
@@ -189,7 +189,6 @@ export default function Home() {
         } else {
           onProgress(progress);
         }
-        // Simulated random failure
         if (Math.random() < 0.01) {
           clearInterval(interval);
           reject(new Error("Stream connection lost."));
@@ -225,6 +224,7 @@ export default function Home() {
     }
   }, [user, activeBatchId, firestore]);
 
+  // Reactive Download Engine
   useEffect(() => {
     if (!isProcessing || !items.length || !firestore || !user || !activeBatchId) return;
 
@@ -268,6 +268,7 @@ export default function Home() {
     }
   };
 
+  // Global Loading State
   if (isUserLoading || isBatchesLoading || isInitializing) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4">
@@ -277,7 +278,8 @@ export default function Home() {
     );
   }
 
-  const showUploader = !activeBatchId || (items.length === 0 && !isEntriesLoading);
+  // View Switcher: Show uploader if no active batch is set
+  const showUploader = !activeBatchId;
 
   return (
     <main className="min-h-screen">
