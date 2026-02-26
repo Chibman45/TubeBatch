@@ -8,47 +8,154 @@ import { VideoItem } from '@/app/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import JSZip from 'jszip';
+import { 
+  useUser, 
+  useFirestore, 
+  useAuth, 
+  useCollection, 
+  useMemoFirebase,
+  addDocumentNonBlocking,
+  updateDocumentNonBlocking,
+  deleteDocumentNonBlocking,
+  initiateAnonymousSignIn
+} from '@/firebase';
+import { collection, doc, query, orderBy, limit, serverTimestamp, where } from 'firebase/firestore';
+import { Loader2 } from 'lucide-react';
 
 export default function Home() {
-  const [items, setItems] = useState<VideoItem[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const { user, isUserLoading } = useUser();
+  const { firestore } = useFirestore();
+  const auth = useAuth();
   const { toast } = useToast();
 
-  const handleUpload = (newItems: VideoItem[]) => {
-    setItems(newItems);
-    toast({
-      title: "CSV Imported",
-      description: `Successfully loaded ${newItems.length} videos from the file.`,
-    });
+  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
+
+  // 1. Ensure user is signed in
+  useEffect(() => {
+    if (!isUserLoading && !user && auth) {
+      initiateAnonymousSignIn(auth);
+    }
+  }, [user, isUserLoading, auth]);
+
+  // 2. Fetch the latest batch for this user
+  const batchesQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return query(
+      collection(firestore, 'users', user.uid, 'downloadBatches'),
+      orderBy('createdAt', 'desc'),
+      limit(1)
+    );
+  }, [firestore, user]);
+
+  const { data: batches } = useCollection(batchesQuery);
+
+  // Set active batch if we have one
+  useEffect(() => {
+    if (batches && batches.length > 0 && !activeBatchId) {
+      setActiveBatchId(batches[0].id);
+    }
+  }, [batches, activeBatchId]);
+
+  // 3. Fetch entries for the active batch
+  const entriesQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !activeBatchId) return null;
+    return query(
+      collection(firestore, 'users', user.uid, 'downloadBatches', activeBatchId, 'videoDownloadEntries'),
+      orderBy('createdAt', 'asc')
+    );
+  }, [firestore, user, activeBatchId]);
+
+  const { data: entries, isLoading: isEntriesLoading } = useCollection(entriesQuery);
+
+  // UI Mapping
+  const items: VideoItem[] = (entries || []).map(e => ({
+    id: e.id,
+    url: e.originalUrl,
+    title: e.desiredTitle,
+    status: e.status as any,
+    progress: e.progress,
+    error: e.errorMessage,
+    size: e.filePath?.split('|')[1] // Simple hack to store size in path for now
+  }));
+
+  const isProcessing = batches?.[0]?.status === 'PROCESSING';
+
+  const handleUpload = async (newItems: VideoItem[]) => {
+    if (!user || !firestore) return;
+
+    // Create a new batch document
+    const batchRef = await addDocumentNonBlocking(
+      collection(firestore, 'users', user.uid, 'downloadBatches'),
+      {
+        userId: user.uid,
+        status: 'PENDING',
+        totalVideos: newItems.length,
+        completedVideos: 0,
+        failedVideos: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }
+    );
+
+    if (batchRef) {
+      setActiveBatchId(batchRef.id);
+      
+      // Add all entries
+      newItems.forEach((item, index) => {
+        addDocumentNonBlocking(
+          collection(firestore, 'users', user.uid, 'downloadBatches', batchRef.id, 'videoDownloadEntries'),
+          {
+            batchId: batchRef.id,
+            userId: user.uid,
+            originalUrl: item.url,
+            desiredTitle: item.title,
+            status: 'pending',
+            progress: 0,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          }
+        );
+      });
+
+      toast({
+        title: "Batch Created",
+        description: `Successfully loaded ${newItems.length} videos to the cloud.`,
+      });
+    }
   };
 
   const clearQueue = () => {
-    setItems([]);
-    setIsProcessing(false);
+    if (!user || !firestore || !activeBatchId) return;
+    // We don't delete history in this MVP, just "reset" view by making a new one later or hiding
+    setActiveBatchId(null);
   };
 
   const removeItem = (id: string) => {
-    setItems(prev => prev.filter(item => item.id !== id));
+    if (!user || !activeBatchId) return;
+    deleteDocumentNonBlocking(doc(firestore!, 'users', user.uid, 'downloadBatches', activeBatchId, 'videoDownloadEntries', id));
   };
 
   const retryItem = (id: string) => {
-    setItems(prev => prev.map(item => 
-      item.id === id ? { ...item, status: 'pending', progress: 0, error: undefined } : item
-    ));
-    // If the engine is already running, the useEffect will pick this up automatically.
-    // If not, it stays pending until "Start Batch" is clicked.
+    if (!user || !activeBatchId) return;
+    updateDocumentNonBlocking(
+      doc(firestore!, 'users', user.uid, 'downloadBatches', activeBatchId, 'videoDownloadEntries', id),
+      { status: 'pending', progress: 0, errorMessage: null, updatedAt: serverTimestamp() }
+    );
   };
 
   const startBatch = () => {
-    setIsProcessing(true);
+    if (!user || !activeBatchId) return;
+    updateDocumentNonBlocking(
+      doc(firestore!, 'users', user.uid, 'downloadBatches', activeBatchId),
+      { status: 'PROCESSING', startTime: serverTimestamp(), updatedAt: serverTimestamp() }
+    );
   };
 
-  const simulateDownload = (id: string, onProgress: (p: number) => void): Promise<void> => {
+  const simulateDownload = (entryId: string, onProgress: (p: number) => void): Promise<void> => {
     return new Promise((resolve, reject) => {
       let progress = 0;
       const interval = setInterval(() => {
         progress += Math.floor(Math.random() * 20) + 5;
-        
         if (progress >= 100) {
           clearInterval(interval);
           onProgress(100);
@@ -56,119 +163,103 @@ export default function Home() {
         } else {
           onProgress(progress);
         }
-
-        // Small random failure chance for realism
         if (Math.random() < 0.005) {
           clearInterval(interval);
-          reject(new Error("Stream connection lost. Please retry."));
+          reject(new Error("Stream connection lost."));
         }
       }, 300);
     });
   };
 
-  const processItem = useCallback(async (id: string) => {
-    // Set to downloading
-    setItems(prev => prev.map(it => 
-      it.id === id ? { ...it, status: 'downloading', progress: 0 } : it
-    ));
+  const processItem = useCallback(async (entryId: string) => {
+    if (!user || !activeBatchId || !firestore) return;
+
+    const entryRef = doc(firestore, 'users', user.uid, 'downloadBatches', activeBatchId, 'videoDownloadEntries', entryId);
+    
+    updateDocumentNonBlocking(entryRef, { status: 'downloading', progress: 0, updatedAt: serverTimestamp() });
 
     try {
-      // Step 1: Simulate Metadata Fetching
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Step 2: Simulate Download Progress
-      await simulateDownload(id, (progress) => {
-        setItems(prev => prev.map(it => 
-          it.id === id ? { ...it, progress } : it
-        ));
+      await simulateDownload(entryId, (progress) => {
+        updateDocumentNonBlocking(entryRef, { progress, updatedAt: serverTimestamp() });
       });
 
-      // Step 3: Complete
-      setItems(prev => prev.map(it => 
-        it.id === id ? { ...it, status: 'completed', progress: 100, size: `${(Math.random() * 50 + 10).toFixed(1)}MB` } : it
-      ));
+      updateDocumentNonBlocking(entryRef, { 
+        status: 'completed', 
+        progress: 100, 
+        filePath: `simulated_path|${(Math.random() * 50 + 10).toFixed(1)}MB`,
+        updatedAt: serverTimestamp() 
+      });
     } catch (err: any) {
-      setItems(prev => prev.map(it => 
-        it.id === id ? { ...it, status: 'failed', error: err.message || 'Unknown error' } : it
-      ));
+      updateDocumentNonBlocking(entryRef, { 
+        status: 'failed', 
+        errorMessage: err.message || 'Unknown error',
+        updatedAt: serverTimestamp() 
+      });
     }
-  }, []);
+  }, [user, activeBatchId, firestore]);
 
   // Reactive Batch Engine
   useEffect(() => {
-    if (!isProcessing) return;
+    if (!isProcessing || !items.length) return;
 
-    // Sequential processing: find the first item that is pending
     const pendingItem = items.find(i => i.status === 'pending');
     const currentlyDownloadingCount = items.filter(i => i.status === 'downloading').length;
 
-    // Limit to 1 concurrent download for visual clarity in this demo
     if (pendingItem && currentlyDownloadingCount < 1) {
       processItem(pendingItem.id);
     } else if (!pendingItem && currentlyDownloadingCount === 0) {
-      // If nothing is pending and nothing is downloading, check if we are actually done
       const allDone = items.every(i => i.status === 'completed' || i.status === 'failed');
-      if (allDone && items.length > 0) {
-        setIsProcessing(false);
-        toast({
-          title: "Batch Process Finished",
-          description: "All items in the queue have been processed.",
-        });
+      if (allDone) {
+        updateDocumentNonBlocking(
+          doc(firestore!, 'users', user!.uid, 'downloadBatches', activeBatchId!),
+          { status: 'COMPLETED', endTime: serverTimestamp(), updatedAt: serverTimestamp() }
+        );
+        toast({ title: "Batch Finished", description: "All items processed." });
       }
     }
-  }, [items, isProcessing, processItem, toast]);
+  }, [items, isProcessing, processItem, toast, firestore, user, activeBatchId]);
 
   const downloadZip = async () => {
     const completedItems = items.filter(i => i.status === 'completed');
     if (completedItems.length === 0) return;
 
-    toast({
-      title: "Generating ZIP",
-      description: `Bundling ${completedItems.length} videos into archive...`,
-    });
+    toast({ title: "Generating ZIP", description: "Bundling videos..." });
 
     try {
       const zip = new JSZip();
-      
       completedItems.forEach(item => {
-        zip.file(`${item.title.replace(/[/\\?%*:|"<>]/g, '-')}.mp4`, `Simulated video content for: ${item.title}\nSource: ${item.url}`);
+        zip.file(`${item.title.replace(/[/\\?%*:|"<>]/g, '-')}.mp4`, `Simulated video: ${item.title}\nURL: ${item.url}`);
       });
-
       const content = await zip.generateAsync({ type: 'blob' });
       const url = window.URL.createObjectURL(content);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `tubebatch-archive-${new Date().getTime()}.zip`;
-      document.body.appendChild(link);
+      link.download = `tubebatch-${activeBatchId}.zip`;
       link.click();
-      document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-
-      toast({
-        title: "Download Started",
-        description: "Your batch ZIP file is now downloading.",
-      });
     } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Archive Failed",
-        description: "Could not generate the ZIP file. Please try again.",
-      });
+      toast({ variant: "destructive", title: "Archive Failed" });
     }
   };
+
+  if (isUserLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-accent" />
+      </div>
+    );
+  }
 
   return (
     <main className="min-h-screen">
       <Header />
-      
       <div className="container mx-auto px-4 pb-12">
-        {items.length === 0 ? (
+        {!activeBatchId || (items.length === 0 && !isEntriesLoading) ? (
           <div className="py-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="text-center mb-12">
               <h2 className="text-4xl font-extrabold mb-4 tracking-tight">Batch download made simple.</h2>
               <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-                TubeBatch helps you grab entire libraries of content using your own naming conventions. 
-                Just upload a CSV and let our engine handle the rest.
+                Upload a CSV and let our cloud-backed engine handle your library.
               </p>
             </div>
             <CsvUploader onUpload={handleUpload} />
@@ -187,7 +278,6 @@ export default function Home() {
           </div>
         )}
       </div>
-      
       <Toaster />
     </main>
   );
