@@ -51,7 +51,7 @@ export default function Home() {
 
   const { data: batches, isLoading: isBatchesLoading } = useCollection(batchesQuery);
 
-  // Restore latest batch ID automatically if none is active and we're not starting a new one
+  // Restore latest batch ID automatically if none is active
   useEffect(() => {
     if (batches && batches.length > 0 && !activeBatchId && !isInitializing) {
       setActiveBatchId(batches[0].id);
@@ -94,14 +94,14 @@ export default function Home() {
       toast({
         variant: "destructive",
         title: "Connection Pending",
-        description: "Please wait a moment for the cloud engine to initialize.",
+        description: "Please wait for the cloud engine to initialize.",
       });
       return;
     }
 
     setIsInitializing(true);
     try {
-      // Create batch record
+      // Step 2: Create batch record immediately
       const batchRef = await addDocumentNonBlocking(
         collection(firestore, 'users', user.uid, 'downloadBatches'),
         {
@@ -116,10 +116,10 @@ export default function Home() {
       );
 
       if (batchRef) {
-        // Switch view to the new batch immediately
+        // Immediate switch to queue view
         setActiveBatchId(batchRef.id);
         
-        // Persist video entries in the background
+        // Persist video entries
         newItems.forEach((item) => {
           addDocumentNonBlocking(
             collection(firestore, 'users', user.uid, 'downloadBatches', batchRef.id, 'videoDownloadEntries'),
@@ -137,19 +137,18 @@ export default function Home() {
         });
 
         toast({
-          title: "Queue Created",
-          description: `Cloud synchronization started for ${newItems.length} videos.`,
+          title: "Batch Created",
+          description: "Analyzing links and preparing queue.",
         });
       }
     } catch (err) {
       toast({
         variant: "destructive",
-        title: "Upload Failed",
-        description: "Could not sync data with the database.",
+        title: "Sync Error",
+        description: "Failed to initialize cloud batch.",
       });
     } finally {
-      // Delay turning off initialization state slightly to allow ID to settle and switch views
-      setTimeout(() => setIsInitializing(false), 800);
+      setIsInitializing(false);
     }
   };
 
@@ -182,7 +181,7 @@ export default function Home() {
     return new Promise((resolve, reject) => {
       let progress = 0;
       const interval = setInterval(() => {
-        progress += Math.floor(Math.random() * 20) + 5;
+        progress += Math.floor(Math.random() * 15) + 5;
         if (progress >= 100) {
           clearInterval(interval);
           onProgress(100);
@@ -190,11 +189,12 @@ export default function Home() {
         } else {
           onProgress(progress);
         }
-        if (Math.random() < 0.01) {
+        // Small chance of simulation failure
+        if (Math.random() < 0.005) {
           clearInterval(interval);
-          reject(new Error("Stream connection lost."));
+          reject(new Error("Stream timeout."));
         }
-      }, 300);
+      }, 400);
     });
   };
 
@@ -213,19 +213,19 @@ export default function Home() {
       updateDocumentNonBlocking(entryRef, { 
         status: 'completed', 
         progress: 100, 
-        filePath: `simulated_path|${(Math.random() * 50 + 10).toFixed(1)}MB`,
+        filePath: `simulated|${(Math.random() * 40 + 10).toFixed(1)}MB`,
         updatedAt: serverTimestamp() 
       });
     } catch (err: any) {
       updateDocumentNonBlocking(entryRef, { 
         status: 'failed', 
-        errorMessage: err.message || 'Unknown error',
+        errorMessage: err.message || 'Stream error',
         updatedAt: serverTimestamp() 
       });
     }
   }, [user, activeBatchId, firestore]);
 
-  // Reactive Download Engine
+  // Reactive Engine
   useEffect(() => {
     if (!isProcessing || !items.length || !firestore || !user || !activeBatchId) return;
 
@@ -237,11 +237,12 @@ export default function Home() {
     } else if (!pendingItem && currentlyDownloadingCount === 0) {
       const allDone = items.every(i => i.status === 'completed' || i.status === 'failed');
       if (allDone && items.length > 0) {
+        // Step 3: Set status to COMPLETED and set endTime for countdown
         updateDocumentNonBlocking(
           doc(firestore, 'users', user.uid, 'downloadBatches', activeBatchId),
           { status: 'COMPLETED', endTime: serverTimestamp(), updatedAt: serverTimestamp() }
         );
-        toast({ title: "Batch Finished", description: "All items processed." });
+        toast({ title: "Batch Completed", description: "Your ZIP file is ready for download." });
       }
     }
   }, [items, isProcessing, processItem, toast, firestore, user, activeBatchId]);
@@ -250,12 +251,12 @@ export default function Home() {
     const completedItems = items.filter(i => i.status === 'completed');
     if (completedItems.length === 0) return;
 
-    toast({ title: "Generating ZIP", description: "Bundling videos..." });
+    toast({ title: "Generating Archive", description: "Preparing your files..." });
 
     try {
       const zip = new JSZip();
       completedItems.forEach(item => {
-        zip.file(`${item.title.replace(/[/\\?%*:|"<>]/g, '-')}.mp4`, `Simulated video content for: ${item.title}\nSource: ${item.url}`);
+        zip.file(`${item.title.replace(/[/\\?%*:|"<>]/g, '-')}.mp4`, `Simulated content for: ${item.title}\nSource: ${item.url}`);
       });
       const content = await zip.generateAsync({ type: 'blob' });
       const url = window.URL.createObjectURL(content);
@@ -264,17 +265,19 @@ export default function Home() {
       link.download = `tubebatch-${activeBatchId}.zip`;
       link.click();
       window.URL.revokeObjectURL(url);
+      
+      // Step 4: Logic for system deletion (Mocked by resetting active batch or showing toast)
+      toast({ title: "Download Started", description: "The ZIP file will expire shortly from our cache." });
     } catch (error) {
       toast({ variant: "destructive", title: "Archive Failed" });
     }
   };
 
-  // Global Loading State (Initial page load only)
   if (isUserLoading || (isBatchesLoading && !activeBatchId)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4">
         <Loader2 className="w-10 h-10 animate-spin text-accent" />
-        <p className="text-muted-foreground animate-pulse text-sm">Loading your workspace...</p>
+        <p className="text-muted-foreground animate-pulse text-sm">Synchronizing Cloud Workspace...</p>
       </div>
     );
   }
@@ -286,9 +289,9 @@ export default function Home() {
         {(!activeBatchId || isInitializing) ? (
           <div className="py-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="text-center mb-12">
-              <h2 className="text-4xl font-extrabold mb-4 tracking-tight">Batch download made simple.</h2>
+              <h2 className="text-4xl font-extrabold mb-4 tracking-tight">Rapid Batch Downloader</h2>
               <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-                Upload any CSV containing YouTube links and let our engine handle the rest.
+                Step 1: Upload CSV. Step 2: Queue instantly. Step 3: Download Zip.
               </p>
             </div>
             <CsvUploader onUpload={handleUpload} disabled={isInitializing} />
@@ -297,6 +300,7 @@ export default function Home() {
           <div className="animate-in fade-in zoom-in-95 duration-500">
             <DownloadQueue 
               items={items} 
+              batch={activeBatch as any}
               onStart={startBatch}
               onClear={clearQueue}
               onRemove={removeItem}

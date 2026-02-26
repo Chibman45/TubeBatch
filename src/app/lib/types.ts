@@ -15,4 +15,6 @@ export interface BatchStats {
   completed: number;
   failed: number;
   isProcessing: boolean;
+  status: string;
+  endTime?: any; // Firestore Timestamp
 }
