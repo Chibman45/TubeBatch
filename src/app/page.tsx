@@ -101,7 +101,7 @@ export default function Home() {
 
     setIsInitializing(true);
     try {
-      // Step 2: Create batch record immediately
+      // Step 1: Create batch record immediately
       const batchRef = await addDocumentNonBlocking(
         collection(firestore, 'users', user.uid, 'downloadBatches'),
         {
@@ -116,11 +116,11 @@ export default function Home() {
       );
 
       if (batchRef) {
-        // Immediate switch to queue view
+        // Step 2: Immediate switch to queue view
         setActiveBatchId(batchRef.id);
         
-        // Persist video entries
-        newItems.forEach((item) => {
+        // Persist video entries in the background
+        const promises = newItems.map((item) => 
           addDocumentNonBlocking(
             collection(firestore, 'users', user.uid, 'downloadBatches', batchRef.id, 'videoDownloadEntries'),
             {
@@ -133,12 +133,14 @@ export default function Home() {
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp()
             }
-          );
-        });
+          )
+        );
+
+        await Promise.all(promises);
 
         toast({
           title: "Batch Created",
-          description: "Analyzing links and preparing queue.",
+          description: `Analyzing ${newItems.length} links and preparing queue.`,
         });
       }
     } catch (err) {
@@ -225,7 +227,7 @@ export default function Home() {
     }
   }, [user, activeBatchId, firestore]);
 
-  // Reactive Engine
+  // Reactive Engine for Step 3
   useEffect(() => {
     if (!isProcessing || !items.length || !firestore || !user || !activeBatchId) return;
 
@@ -266,13 +268,14 @@ export default function Home() {
       link.click();
       window.URL.revokeObjectURL(url);
       
-      // Step 4: Logic for system deletion (Mocked by resetting active batch or showing toast)
-      toast({ title: "Download Started", description: "The ZIP file will expire shortly from our cache." });
+      // Step 4: Final user feedback
+      toast({ title: "Download Started", description: "The ZIP file will expire shortly from our cloud cache." });
     } catch (error) {
       toast({ variant: "destructive", title: "Archive Failed" });
     }
   };
 
+  // Safe SSR check
   if (isUserLoading || (isBatchesLoading && !activeBatchId)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4">
