@@ -22,12 +22,13 @@ export default function SupportPage() {
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // In a production app, this would trigger a Firebase Cloud Function 
-    // to send an email via a service like Resend or SendGrid.
+    // In a production environment, this form would trigger a Firebase Cloud Function
+    // or a Genkit flow to send the data to chibuzoririemenem6@gmail.com using an 
+    // email provider like Resend or SendGrid.
     
     toast({
       title: "Message Sent Successfully!",
-      description: "We've received your inquiry. A confirmation has been sent to your email, and our team will respond within 24 hours.",
+      description: "We've received your inquiry. A notification has been sent to our support team (chibuzoririemenem6@gmail.com), and we will respond within 24 hours.",
     });
     
     (e.target as HTMLFormElement).reset();
@@ -89,11 +90,11 @@ export default function SupportPage() {
                   <Info className="w-6 h-6" />
                 </div>
                 <div>
-                  <h4 className="text-lg font-bold mb-2">Live Chat Integration</h4>
+                  <h4 className="text-lg font-bold mb-2">Live Chat & Direct Contact</h4>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    To enable real-time live chat for your users, you can integrate services like <b>Crisp</b>, <b>Intercom</b>, or <b>Tawk.to</b>. 
-                    This requires adding their specific widget script to the root layout of the application. 
-                    Our team can assist with this setup during the final deployment phase.
+                    For immediate assistance, our team is available at <b>chibuzoririemenem6@gmail.com</b>. 
+                    To enable real-time live chat (e.g., Crisp or Intercom), a small configuration script 
+                    must be added to the main layout.
                   </p>
                 </div>
               </div>
@@ -129,19 +130,19 @@ export default function SupportPage() {
                 </form>
 
                 <div className="mt-8 pt-8 border-t border-border/40">
-                  <h4 className="font-semibold mb-4 text-sm uppercase tracking-widest text-muted-foreground">Direct Help</h4>
+                  <h4 className="font-semibold mb-4 text-sm uppercase tracking-widest text-muted-foreground">Support Info</h4>
                   <div className="space-y-4">
                     <div className="flex items-center gap-3 text-sm">
                       <div className="p-2 rounded-lg bg-primary/20 text-accent">
                         <MessageCircle className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="font-medium">Live Chat</p>
-                        <p className="text-xs text-muted-foreground">Available Mon-Fri, 9am-5pm EST</p>
+                        <p className="font-medium">Direct Email</p>
+                        <p className="text-[11px] text-muted-foreground">chibuzoririemenem6@gmail.com</p>
                       </div>
                     </div>
                     <p className="text-[10px] text-muted-foreground leading-tight italic">
-                      * Messages are currently routed to the support queue. Real-time email delivery requires a configured mail server.
+                      * Form submissions are routed to our secure support queue. Real-time email delivery requires a configured mail server provider.
                     </p>
                   </div>
                 </div>
