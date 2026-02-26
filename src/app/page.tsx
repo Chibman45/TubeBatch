@@ -1,12 +1,14 @@
+
 "use client";
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { Header } from '@/components/TubeBatch/Header';
 import { CsvUploader } from '@/components/TubeBatch/CsvUploader';
 import { DownloadQueue } from '@/components/TubeBatch/DownloadQueue';
 import { VideoItem } from '@/app/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
+import JSZip from 'jszip';
 
 export default function Home() {
   const [items, setItems] = useState<VideoItem[]>([]);
@@ -26,31 +28,41 @@ export default function Home() {
     setIsProcessing(false);
   };
 
+  const removeItem = (id: string) => {
+    setItems(prev => prev.filter(item => item.id !== id));
+  };
+
+  const retryItem = (id: string) => {
+    setItems(prev => prev.map(item => 
+      item.id === id ? { ...item, status: 'pending', progress: 0, error: undefined } : item
+    ));
+  };
+
   const startBatch = async () => {
     setIsProcessing(true);
     
-    // Create a copy to work with
-    const updatedItems = [...items];
+    const pendingItems = items.filter(item => item.status === 'pending' || item.status === 'failed');
     
-    for (let i = 0; i < updatedItems.length; i++) {
-      const item = updatedItems[i];
-      
-      // Update status to downloading
+    for (const item of pendingItems) {
+      // Set to downloading
       setItems(prev => prev.map(it => 
         it.id === item.id ? { ...it, status: 'downloading', progress: 0 } : it
       ));
 
-      // Simulate a download process
       try {
+        // Step 1: Simulate Metadata Fetching
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
+        // Step 2: Simulate Download Progress
         await simulateDownload(item.id, (progress) => {
           setItems(prev => prev.map(it => 
             it.id === item.id ? { ...it, progress } : it
           ));
         });
 
-        // Mark as completed
+        // Step 3: Complete
         setItems(prev => prev.map(it => 
-          it.id === item.id ? { ...it, status: 'completed', progress: 100 } : it
+          it.id === item.id ? { ...it, status: 'completed', progress: 100, size: `${(Math.random() * 50 + 10).toFixed(1)}MB` } : it
         ));
       } catch (err: any) {
         setItems(prev => prev.map(it => 
@@ -61,8 +73,8 @@ export default function Home() {
     
     setIsProcessing(false);
     toast({
-      title: "Batch Complete",
-      description: "Finished processing the download queue.",
+      title: "Batch Process Finished",
+      description: "The engine has processed all items in the current queue.",
     });
   };
 
@@ -70,8 +82,7 @@ export default function Home() {
     return new Promise((resolve, reject) => {
       let progress = 0;
       const interval = setInterval(() => {
-        // Randomize progress increments to feel more natural
-        progress += Math.floor(Math.random() * 15) + 5;
+        progress += Math.floor(Math.random() * 20) + 5;
         
         if (progress >= 100) {
           clearInterval(interval);
@@ -81,35 +92,61 @@ export default function Home() {
           onProgress(progress);
         }
 
-        // Simulate random failure (5% chance)
-        if (Math.random() < 0.01) {
+        // Small random failure chance for realism
+        if (Math.random() < 0.005) {
           clearInterval(interval);
-          reject(new Error("Network timeout or invalid stream data."));
+          reject(new Error("Stream connection lost. Please retry."));
         }
-      }, 400);
+      }, 300);
     });
   };
 
-  const downloadZip = () => {
-    // In a real app, we would use JSZip here
+  const downloadZip = async () => {
+    const completedItems = items.filter(i => i.status === 'completed');
+    if (completedItems.length === 0) return;
+
     toast({
-      title: "Preparing Archive",
-      description: "Compressing your downloads into a single ZIP file...",
+      title: "Generating ZIP",
+      description: `Bundling ${completedItems.length} videos into archive...`,
     });
-    
-    setTimeout(() => {
-      toast({
-        title: "Download Ready",
-        description: "Your batch archive has been generated and is downloading.",
+
+    try {
+      const zip = new JSZip();
+      
+      // Add each "video" to the zip
+      // In a real app, these would be the actual file blobs
+      completedItems.forEach(item => {
+        zip.file(`${item.title.replace(/[/\\?%*:|"<>]/g, '-')}.mp4`, `Simulated video content for: ${item.title}\nSource: ${item.url}`);
       });
-    }, 2000);
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = window.URL.createObjectURL(content);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `tubebatch-archive-${new Date().getTime()}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Download Started",
+        description: "Your batch ZIP file is now downloading.",
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Archive Failed",
+        description: "Could not generate the ZIP file. Please try again.",
+      });
+    }
   };
 
   return (
     <main className="min-h-screen">
       <Header />
       
-      <div className="container mx-auto px-4">
+      <div className="container mx-auto px-4 pb-12">
         {items.length === 0 ? (
           <div className="py-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="text-center mb-12">
@@ -127,6 +164,8 @@ export default function Home() {
               items={items} 
               onStart={startBatch}
               onClear={clearQueue}
+              onRemove={removeItem}
+              onRetry={retryItem}
               onDownloadZip={downloadZip}
               isProcessing={isProcessing}
             />

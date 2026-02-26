@@ -1,3 +1,4 @@
+
 "use client";
 
 import { VideoItem } from '@/app/lib/types';
@@ -8,15 +9,28 @@ import {
   AlertCircle, 
   Loader2, 
   Youtube,
-  FileVideo
+  FileVideo,
+  Trash2,
+  RefreshCw,
+  HardDrive
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface DownloadItemProps {
   item: VideoItem;
+  onRemove?: (id: string) => void;
+  onRetry?: (id: string) => void;
+  disabled?: boolean;
 }
 
-export function DownloadItem({ item }: DownloadItemProps) {
+export function DownloadItem({ item, onRemove, onRetry, disabled }: DownloadItemProps) {
   const getStatusIcon = () => {
     switch (item.status) {
       case 'completed':
@@ -34,13 +48,16 @@ export function DownloadItem({ item }: DownloadItemProps) {
     switch (item.status) {
       case 'completed': return 'Completed';
       case 'failed': return 'Failed';
-      case 'downloading': return `Downloading ${item.progress}%`;
-      default: return 'Pending';
+      case 'downloading': return item.progress < 5 ? 'Connecting...' : `Downloading ${item.progress}%`;
+      default: return 'In Queue';
     }
   };
 
   return (
-    <div className="flex flex-col gap-3 p-4 rounded-xl glass-card transition-all hover:border-accent/20">
+    <div className={cn(
+      "flex flex-col gap-3 p-4 rounded-xl glass-card transition-all border border-transparent",
+      item.status === 'downloading' && "border-accent/20 bg-accent/5"
+    )}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 overflow-hidden">
           <div className={cn(
@@ -55,24 +72,68 @@ export function DownloadItem({ item }: DownloadItemProps) {
             <div className="flex items-center gap-2 mt-0.5">
               <Youtube className="w-3 h-3 text-destructive" />
               <span className="text-xs text-muted-foreground truncate max-w-[200px]">{item.url}</span>
+              {item.size && (
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground ml-2">
+                  <HardDrive className="w-2.5 h-2.5" />
+                  {item.size}
+                </span>
+              )}
             </div>
           </div>
         </div>
         
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="text-right">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="text-right mr-2">
             <span className={cn(
-              "text-xs font-semibold px-2 py-1 rounded-full",
+              "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider",
               item.status === 'completed' && "text-accent bg-accent/10",
               item.status === 'failed' && "text-destructive bg-destructive/10",
-              item.status === 'downloading' && "text-accent animate-pulse",
-              item.status === 'pending' && "text-muted-foreground bg-muted"
+              item.status === 'downloading' && "text-accent bg-accent/5 animate-pulse",
+              item.status === 'pending' && "text-muted-foreground bg-muted/40"
             )}>
               {getStatusText()}
             </span>
-            {item.error && <p className="text-[10px] text-destructive mt-1 max-w-[120px]">{item.error}</p>}
           </div>
-          <div className="flex-shrink-0">
+          
+          <div className="flex items-center gap-1">
+            <TooltipProvider>
+              {item.status === 'failed' && onRetry && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-muted-foreground hover:text-accent"
+                      onClick={() => onRetry(item.id)}
+                      disabled={disabled}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Retry Download</TooltipContent>
+                </Tooltip>
+              )}
+              
+              {onRemove && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={() => onRemove(item.id)}
+                      disabled={disabled || item.status === 'downloading'}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Remove from Queue</TooltipContent>
+                </Tooltip>
+              )}
+            </TooltipProvider>
+          </div>
+          
+          <div className="ml-1">
             {getStatusIcon()}
           </div>
         </div>
@@ -81,7 +142,7 @@ export function DownloadItem({ item }: DownloadItemProps) {
       {(item.status === 'downloading' || item.status === 'completed') && (
         <div className="w-full">
           <div className="flex justify-between items-center mb-1.5 px-1">
-             <span className="text-[10px] text-muted-foreground font-medium">Download Progress</span>
+             <span className="text-[10px] text-muted-foreground font-medium">Stream Buffer</span>
              <span className="text-[10px] text-accent font-bold">{item.progress}%</span>
           </div>
           <Progress 
@@ -92,6 +153,13 @@ export function DownloadItem({ item }: DownloadItemProps) {
                 item.status === 'completed' ? 'progress-vibrant' : 'bg-accent/60'
             )}
           />
+        </div>
+      )}
+      
+      {item.error && (
+        <div className="px-2 py-1.5 bg-destructive/5 rounded-md border border-destructive/10 flex items-center gap-2">
+          <AlertCircle className="w-3 h-3 text-destructive" />
+          <p className="text-[10px] text-destructive font-medium">{item.error}</p>
         </div>
       )}
     </div>
