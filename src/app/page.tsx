@@ -12,6 +12,7 @@ import {
   useFirestore, 
   useAuth, 
   useCollection, 
+  useDoc,
   useMemoFirebase,
   addDocumentNonBlocking,
   updateDocumentNonBlocking,
@@ -36,7 +37,7 @@ export default function Home() {
     }
   }, [user, isUserLoading, auth]);
 
-  // 2. Real-time Sync: Fetch the latest batch for this user
+  // 2. Persistent History: Fetch the latest batch for this user to restore session
   const batchesQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return query(
@@ -46,16 +47,24 @@ export default function Home() {
     );
   }, [firestore, user]);
 
-  const { data: batches } = useCollection(batchesQuery);
+  const { data: batches, isLoading: isBatchesLoading } = useCollection(batchesQuery);
 
-  // Automatically switch to the latest batch found in history
+  // Restore the latest batch ID if none is active
   useEffect(() => {
     if (batches && batches.length > 0 && !activeBatchId) {
       setActiveBatchId(batches[0].id);
     }
   }, [batches, activeBatchId]);
 
-  // 3. Real-time Sync: Fetch all video entries for the active batch
+  // 3. Real-time Batch Status: Fetch the active batch document
+  const activeBatchRef = useMemoFirebase(() => {
+    if (!firestore || !user || !activeBatchId) return null;
+    return doc(firestore, 'users', user.uid, 'downloadBatches', activeBatchId);
+  }, [firestore, user, activeBatchId]);
+
+  const { data: activeBatch } = useDoc(activeBatchRef);
+
+  // 4. Real-time Sync: Fetch all video entries for the active batch
   const entriesQuery = useMemoFirebase(() => {
     if (!firestore || !user || !activeBatchId) return null;
     return query(
@@ -77,7 +86,7 @@ export default function Home() {
     size: e.filePath?.split('|')[1]
   }));
 
-  const isProcessing = batches?.[0]?.status === 'PROCESSING';
+  const isProcessing = activeBatch?.status === 'PROCESSING';
 
   const handleUpload = async (newItems: VideoItem[]) => {
     if (!user || !firestore) return;
@@ -97,6 +106,7 @@ export default function Home() {
     );
 
     if (batchRef) {
+      // Switch UI to the new batch immediately
       setActiveBatchId(batchRef.id);
       
       // Persist individual video entries
@@ -148,7 +158,6 @@ export default function Home() {
     );
   };
 
-  // Simulated download logic (Replace with real cloud function calls in full production)
   const simulateDownload = (onProgress: (p: number) => void): Promise<void> => {
     return new Promise((resolve, reject) => {
       let progress = 0;
@@ -161,7 +170,7 @@ export default function Home() {
         } else {
           onProgress(progress);
         }
-        if (Math.random() < 0.005) { // Occasional random failure
+        if (Math.random() < 0.005) {
           clearInterval(interval);
           reject(new Error("Stream connection lost."));
         }
@@ -196,9 +205,8 @@ export default function Home() {
     }
   }, [user, activeBatchId, firestore]);
 
-  // Reactive Batch Engine: Automatically processes the queue based on Firestore state
   useEffect(() => {
-    if (!isProcessing || !items.length) return;
+    if (!isProcessing || !items.length || !firestore || !user || !activeBatchId) return;
 
     const pendingItem = items.find(i => i.status === 'pending');
     const currentlyDownloadingCount = items.filter(i => i.status === 'downloading').length;
@@ -209,7 +217,7 @@ export default function Home() {
       const allDone = items.every(i => i.status === 'completed' || i.status === 'failed');
       if (allDone) {
         updateDocumentNonBlocking(
-          doc(firestore!, 'users', user!.uid, 'downloadBatches', activeBatchId!),
+          doc(firestore, 'users', user.uid, 'downloadBatches', activeBatchId),
           { status: 'COMPLETED', endTime: serverTimestamp(), updatedAt: serverTimestamp() }
         );
         toast({ title: "Batch Finished", description: "All items processed." });
@@ -240,7 +248,7 @@ export default function Home() {
     }
   };
 
-  if (isUserLoading) {
+  if (isUserLoading || isBatchesLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-accent" />
@@ -248,11 +256,13 @@ export default function Home() {
     );
   }
 
+  const showUploader = !activeBatchId || (items.length === 0 && !isEntriesLoading);
+
   return (
     <main className="min-h-screen">
       <Header />
       <div className="container mx-auto px-4 pb-12">
-        {!activeBatchId || (items.length === 0 && !isEntriesLoading) ? (
+        {showUploader ? (
           <div className="py-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="text-center mb-12">
               <h2 className="text-4xl font-extrabold mb-4 tracking-tight">Batch download made simple.</h2>
