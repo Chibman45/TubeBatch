@@ -51,12 +51,12 @@ export default function Home() {
 
   const { data: batches, isLoading: isBatchesLoading } = useCollection(batchesQuery);
 
-  // Restore latest batch ID automatically
+  // Restore latest batch ID automatically if none is active
   useEffect(() => {
-    if (batches && batches.length > 0 && !activeBatchId) {
+    if (batches && batches.length > 0 && !activeBatchId && !isInitializing) {
       setActiveBatchId(batches[0].id);
     }
-  }, [batches, activeBatchId]);
+  }, [batches, activeBatchId, isInitializing]);
 
   // 3. Active Batch Doc
   const activeBatchRef = useMemoFirebase(() => {
@@ -116,10 +116,10 @@ export default function Home() {
       );
 
       if (batchRef) {
-        // Switch view to the new batch immediately
+        // Switch view to the new batch immediately to show the Queue UI
         setActiveBatchId(batchRef.id);
         
-        // Persist video entries
+        // Persist video entries in the background
         newItems.forEach((item) => {
           addDocumentNonBlocking(
             collection(firestore, 'users', user.uid, 'downloadBatches', batchRef.id, 'videoDownloadEntries'),
@@ -138,7 +138,7 @@ export default function Home() {
 
         toast({
           title: "Queue Created",
-          description: `Successfully loaded ${newItems.length} videos.`,
+          description: `Cloud synchronization started for ${newItems.length} videos.`,
         });
       }
     } catch (err) {
@@ -148,7 +148,8 @@ export default function Home() {
         description: "Could not sync data with the database.",
       });
     } finally {
-      setIsInitializing(false);
+      // Delay turning off initialization state slightly to allow ID to settle
+      setTimeout(() => setIsInitializing(false), 500);
     }
   };
 
@@ -268,8 +269,8 @@ export default function Home() {
     }
   };
 
-  // Global Loading State
-  if (isUserLoading || isBatchesLoading || isInitializing) {
+  // Global Loading State (Initial page load only)
+  if (isUserLoading || (isBatchesLoading && !activeBatchId)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4">
         <Loader2 className="w-10 h-10 animate-spin text-accent" />
@@ -278,14 +279,11 @@ export default function Home() {
     );
   }
 
-  // View Switcher: Show uploader if no active batch is set
-  const showUploader = !activeBatchId;
-
   return (
     <main className="min-h-screen">
       <Header />
       <div className="container mx-auto px-4 pb-12">
-        {showUploader ? (
+        {(!activeBatchId || isInitializing) ? (
           <div className="py-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="text-center mb-12">
               <h2 className="text-4xl font-extrabold mb-4 tracking-tight">Batch download made simple.</h2>
@@ -293,7 +291,7 @@ export default function Home() {
                 Upload any CSV containing YouTube links and let our engine handle the rest.
               </p>
             </div>
-            <CsvUploader onUpload={handleUpload} />
+            <CsvUploader onUpload={handleUpload} disabled={isInitializing} />
           </div>
         ) : (
           <div className="animate-in fade-in zoom-in-95 duration-500">
