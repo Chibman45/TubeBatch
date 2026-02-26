@@ -1,4 +1,3 @@
-
 "use client";
 
 import { VideoItem } from '@/app/lib/types';
@@ -10,7 +9,8 @@ import {
   Archive, 
   Info,
   Layers,
-  FileText
+  FileText,
+  Loader2
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { generateCsvTemplate } from '@/app/lib/csv-parser';
@@ -34,12 +34,21 @@ export function DownloadQueue({
   onDownloadZip,
   isProcessing 
 }: DownloadQueueProps) {
-  if (items.length === 0) return null;
+  // If items are empty, we might be in the middle of a Firestore sync
+  if (items.length === 0) {
+    return (
+      <div className="w-full max-w-4xl mx-auto py-20 text-center">
+        <Loader2 className="w-12 h-12 animate-spin text-accent mx-auto mb-4" />
+        <h3 className="text-xl font-bold">Initializing Batch...</h3>
+        <p className="text-muted-foreground">Synchronizing your list with the cloud engine.</p>
+      </div>
+    );
+  }
 
   const completedCount = items.filter(i => i.status === 'completed').length;
   const failedCount = items.filter(i => i.status === 'failed').length;
   const overallProgress = items.length > 0 ? Math.round((completedCount / items.length) * 100) : 0;
-  const isFinished = completedCount + failedCount === items.length;
+  const isFinished = (completedCount + failedCount) === items.length && items.length > 0;
 
   const handleDownloadTemplate = () => {
     const template = generateCsvTemplate();
@@ -80,7 +89,7 @@ export function DownloadQueue({
             <Button 
               onClick={onDownloadZip}
               disabled={completedCount === 0}
-              className="bg-accent text-background hover:bg-accent/90 shadow-[0_4px_14px_0_rgba(26,250,26,0.25)]"
+              className="bg-accent text-background hover:bg-accent/90 shadow-[0_4px_14_0_rgba(26,250,26,0.25)]"
             >
               <Archive className="w-4 h-4 mr-2" />
               Download ZIP ({completedCount})
@@ -109,7 +118,7 @@ export function DownloadQueue({
         <div className="relative z-10 flex justify-between items-end mb-4">
           <div>
             <p className="text-sm text-muted-foreground mb-1">Batch Progress</p>
-            <h3 className="text-3xl font-bold font-headline">
+            <h3 className="text-3xl font-bold">
               {overallProgress}% <span className="text-sm font-normal text-muted-foreground">Complete</span>
             </h3>
           </div>
