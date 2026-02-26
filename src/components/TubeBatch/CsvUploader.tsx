@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { parseVideoCsv } from '@/app/lib/csv-parser';
 import { VideoItem } from '@/app/lib/types';
+import { useToast } from '@/hooks/use-toast';
 
 interface CsvUploaderProps {
   onUpload: (items: VideoItem[]) => void;
@@ -15,6 +16,7 @@ interface CsvUploaderProps {
 export function CsvUploader({ onUpload, disabled }: CsvUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -24,10 +26,26 @@ export function CsvUploader({ onUpload, disabled }: CsvUploaderProps) {
   };
 
   const processFile = async (file: File) => {
-    const text = await file.text();
-    const items = parseVideoCsv(text);
-    if (items.length > 0) {
-      onUpload(items);
+    try {
+      const text = await file.text();
+      const items = parseVideoCsv(text);
+      if (items.length > 0) {
+        onUpload(items);
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Import Failed",
+          description: "No valid YouTube URLs found. Make sure your CSV follows the 'url, title' format.",
+        });
+      }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "File Error",
+        description: "Could not read the file. Please ensure it is a standard CSV.",
+      });
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -44,8 +62,14 @@ export function CsvUploader({ onUpload, disabled }: CsvUploaderProps) {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && file.name.endsWith('.csv')) {
+    if (file && (file.name.endsWith('.csv') || file.type === 'text/csv')) {
       processFile(file);
+    } else {
+      toast({
+        variant: "destructive",
+        title: "Invalid File",
+        description: "Please drop a CSV file.",
+      });
     }
   };
 
