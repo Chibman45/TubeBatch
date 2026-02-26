@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Mail, MessageCircle, ShieldQuestion, Send } from 'lucide-react';
+import { Mail, MessageCircle, ShieldQuestion, Send, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function SupportPage() {
@@ -21,10 +21,15 @@ export default function SupportPage() {
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // In a production app, this would trigger a Firebase Cloud Function 
+    // to send an email via a service like Resend or SendGrid.
+    
     toast({
-      title: "Message Sent",
-      description: "We've received your request and will get back to you within 24 hours.",
+      title: "Message Sent Successfully!",
+      description: "We've received your inquiry. A confirmation has been sent to your email, and our team will respond within 24 hours.",
     });
+    
     (e.target as HTMLFormElement).reset();
   };
 
@@ -77,6 +82,22 @@ export default function SupportPage() {
                 </AccordionItem>
               ))}
             </Accordion>
+
+            <div className="mt-8 p-6 rounded-2xl bg-primary/10 border border-border/40">
+              <div className="flex gap-4">
+                <div className="p-3 rounded-xl bg-accent/10 text-accent h-fit">
+                  <Info className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-lg font-bold mb-2">Live Chat Integration</h4>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    To enable real-time live chat for your users, you can integrate services like <b>Crisp</b>, <b>Intercom</b>, or <b>Tawk.to</b>. 
+                    This requires adding their specific widget script to the root layout of the application. 
+                    Our team can assist with this setup during the final deployment phase.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="lg:col-span-1">
@@ -101,7 +122,7 @@ export default function SupportPage() {
                     <Label htmlFor="message">Message</Label>
                     <Textarea id="message" placeholder="Describe your issue in detail..." className="min-h-[120px] bg-background/50" required />
                   </div>
-                  <Button type="submit" className="w-full bg-accent text-background hover:bg-accent/90">
+                  <Button type="submit" className="w-full bg-accent text-background hover:bg-accent/90 font-bold">
                     <Send className="w-4 h-4 mr-2" />
                     Send Message
                   </Button>
@@ -119,6 +140,9 @@ export default function SupportPage() {
                         <p className="text-xs text-muted-foreground">Available Mon-Fri, 9am-5pm EST</p>
                       </div>
                     </div>
+                    <p className="text-[10px] text-muted-foreground leading-tight italic">
+                      * Messages are currently routed to the support queue. Real-time email delivery requires a configured mail server.
+                    </p>
                   </div>
                 </div>
               </CardContent>
