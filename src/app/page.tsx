@@ -6,7 +6,6 @@ import { CsvUploader } from '@/components/TubeBatch/CsvUploader';
 import { DownloadQueue } from '@/components/TubeBatch/DownloadQueue';
 import { VideoItem } from '@/app/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { Toaster } from '@/components/ui/toaster';
 import JSZip from 'jszip';
 import { 
   useUser, 
@@ -277,7 +276,6 @@ export default function Home() {
           </div>
         )}
       </div>
-      <Toaster />
     </main>
   );
 }

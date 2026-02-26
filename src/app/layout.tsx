@@ -1,7 +1,7 @@
-
 import type {Metadata} from 'next';
 import './globals.css';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
+import { Toaster } from '@/components/ui/toaster';
 
 export const metadata: Metadata = {
   title: 'TubeBatch Downloader | Modern YouTube Batch Tool',
@@ -23,6 +23,7 @@ export default function RootLayout({
       <body className="font-body antialiased bg-background text-foreground min-h-screen" suppressHydrationWarning>
         <FirebaseClientProvider>
           {children}
+          <Toaster />
         </FirebaseClientProvider>
       </body>
     </html>
