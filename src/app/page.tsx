@@ -19,7 +19,7 @@ import {
   deleteDocumentNonBlocking,
   initiateAnonymousSignIn
 } from '@/firebase';
-import { collection, doc, query, orderBy, limit, serverTimestamp, where } from 'firebase/firestore';
+import { collection, doc, query, orderBy, limit, serverTimestamp } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
 
 export default function Home() {
@@ -30,14 +30,14 @@ export default function Home() {
 
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
 
-  // 1. Ensure user is signed in
+  // 1. Production Authentication: Ensure every user has a private UID (Anonymous Login)
   useEffect(() => {
     if (!isUserLoading && !user && auth) {
       initiateAnonymousSignIn(auth);
     }
   }, [user, isUserLoading, auth]);
 
-  // 2. Fetch the latest batch for this user
+  // 2. Real-time Sync: Fetch the latest batch for this user
   const batchesQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return query(
@@ -49,14 +49,14 @@ export default function Home() {
 
   const { data: batches } = useCollection(batchesQuery);
 
-  // Set active batch if we have one
+  // Automatically switch to the latest batch found in history
   useEffect(() => {
     if (batches && batches.length > 0 && !activeBatchId) {
       setActiveBatchId(batches[0].id);
     }
   }, [batches, activeBatchId]);
 
-  // 3. Fetch entries for the active batch
+  // 3. Real-time Sync: Fetch all video entries for the active batch
   const entriesQuery = useMemoFirebase(() => {
     if (!firestore || !user || !activeBatchId) return null;
     return query(
@@ -67,7 +67,7 @@ export default function Home() {
 
   const { data: entries, isLoading: isEntriesLoading } = useCollection(entriesQuery);
 
-  // UI Mapping
+  // Map Firestore data to UI state
   const items: VideoItem[] = (entries || []).map(e => ({
     id: e.id,
     url: e.originalUrl,
@@ -75,7 +75,7 @@ export default function Home() {
     status: e.status as any,
     progress: e.progress,
     error: e.errorMessage,
-    size: e.filePath?.split('|')[1] // Simple hack to store size in path for now
+    size: e.filePath?.split('|')[1]
   }));
 
   const isProcessing = batches?.[0]?.status === 'PROCESSING';
@@ -83,7 +83,7 @@ export default function Home() {
   const handleUpload = async (newItems: VideoItem[]) => {
     if (!user || !firestore) return;
 
-    // Create a new batch document
+    // Create persistent batch record
     const batchRef = await addDocumentNonBlocking(
       collection(firestore, 'users', user.uid, 'downloadBatches'),
       {
@@ -100,8 +100,8 @@ export default function Home() {
     if (batchRef) {
       setActiveBatchId(batchRef.id);
       
-      // Add all entries
-      newItems.forEach((item, index) => {
+      // Persist individual video entries
+      newItems.forEach((item) => {
         addDocumentNonBlocking(
           collection(firestore, 'users', user.uid, 'downloadBatches', batchRef.id, 'videoDownloadEntries'),
           {
@@ -119,39 +119,38 @@ export default function Home() {
 
       toast({
         title: "Batch Created",
-        description: `Successfully loaded ${newItems.length} videos to the cloud.`,
+        description: `Successfully uploaded ${newItems.length} videos.`,
       });
     }
   };
 
   const clearQueue = () => {
-    if (!user || !firestore || !activeBatchId) return;
-    // We don't delete history in this MVP, just "reset" view by making a new one later or hiding
     setActiveBatchId(null);
   };
 
   const removeItem = (id: string) => {
-    if (!user || !activeBatchId) return;
-    deleteDocumentNonBlocking(doc(firestore!, 'users', user.uid, 'downloadBatches', activeBatchId, 'videoDownloadEntries', id));
+    if (!user || !activeBatchId || !firestore) return;
+    deleteDocumentNonBlocking(doc(firestore, 'users', user.uid, 'downloadBatches', activeBatchId, 'videoDownloadEntries', id));
   };
 
   const retryItem = (id: string) => {
-    if (!user || !activeBatchId) return;
+    if (!user || !activeBatchId || !firestore) return;
     updateDocumentNonBlocking(
-      doc(firestore!, 'users', user.uid, 'downloadBatches', activeBatchId, 'videoDownloadEntries', id),
+      doc(firestore, 'users', user.uid, 'downloadBatches', activeBatchId, 'videoDownloadEntries', id),
       { status: 'pending', progress: 0, errorMessage: null, updatedAt: serverTimestamp() }
     );
   };
 
   const startBatch = () => {
-    if (!user || !activeBatchId) return;
+    if (!user || !activeBatchId || !firestore) return;
     updateDocumentNonBlocking(
-      doc(firestore!, 'users', user.uid, 'downloadBatches', activeBatchId),
+      doc(firestore, 'users', user.uid, 'downloadBatches', activeBatchId),
       { status: 'PROCESSING', startTime: serverTimestamp(), updatedAt: serverTimestamp() }
     );
   };
 
-  const simulateDownload = (entryId: string, onProgress: (p: number) => void): Promise<void> => {
+  // Simulated download logic (Replace with real cloud function calls in full production)
+  const simulateDownload = (onProgress: (p: number) => void): Promise<void> => {
     return new Promise((resolve, reject) => {
       let progress = 0;
       const interval = setInterval(() => {
@@ -163,7 +162,7 @@ export default function Home() {
         } else {
           onProgress(progress);
         }
-        if (Math.random() < 0.005) {
+        if (Math.random() < 0.005) { // Occasional random failure
           clearInterval(interval);
           reject(new Error("Stream connection lost."));
         }
@@ -179,7 +178,7 @@ export default function Home() {
     updateDocumentNonBlocking(entryRef, { status: 'downloading', progress: 0, updatedAt: serverTimestamp() });
 
     try {
-      await simulateDownload(entryId, (progress) => {
+      await simulateDownload((progress) => {
         updateDocumentNonBlocking(entryRef, { progress, updatedAt: serverTimestamp() });
       });
 
@@ -198,7 +197,7 @@ export default function Home() {
     }
   }, [user, activeBatchId, firestore]);
 
-  // Reactive Batch Engine
+  // Reactive Batch Engine: Automatically processes the queue based on Firestore state
   useEffect(() => {
     if (!isProcessing || !items.length) return;
 
@@ -228,7 +227,7 @@ export default function Home() {
     try {
       const zip = new JSZip();
       completedItems.forEach(item => {
-        zip.file(`${item.title.replace(/[/\\?%*:|"<>]/g, '-')}.mp4`, `Simulated video: ${item.title}\nURL: ${item.url}`);
+        zip.file(`${item.title.replace(/[/\\?%*:|"<>]/g, '-')}.mp4`, `Simulated video content for: ${item.title}\nSource: ${item.url}`);
       });
       const content = await zip.generateAsync({ type: 'blob' });
       const url = window.URL.createObjectURL(content);
