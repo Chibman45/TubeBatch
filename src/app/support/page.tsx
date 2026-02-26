@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Header } from '@/components/TubeBatch/Header';
@@ -12,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Mail, MessageCircle, ShieldQuestion, Send, Info } from 'lucide-react';
+import { Mail, MessageCircle, ShieldQuestion, Send } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function SupportPage() {
@@ -82,22 +83,6 @@ export default function SupportPage() {
                 </AccordionItem>
               ))}
             </Accordion>
-
-            <div className="mt-8 p-6 rounded-2xl bg-primary/10 border border-border/40">
-              <div className="flex gap-4">
-                <div className="p-3 rounded-xl bg-accent/10 text-accent h-fit">
-                  <Info className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="text-lg font-bold mb-2">Live Chat & Direct Contact</h4>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    For immediate assistance, our team is available at <b>chibuzoririemenem6@gmail.com</b>. 
-                    To enable real-time live chat (e.g., Crisp or Intercom), a small configuration script 
-                    must be added to the main layout.
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
 
           <div className="lg:col-span-1">
