@@ -1,4 +1,3 @@
-
 "use client";
 
 import { VideoItem } from '@/app/lib/types';
@@ -105,7 +104,7 @@ export function DownloadItem({ item, onRemove, onRetry, disabled }: DownloadItem
                       size="icon" 
                       className="h-8 w-8 text-muted-foreground hover:text-accent"
                       onClick={() => onRetry(item.id)}
-                      disabled={disabled}
+                      // Retry is always allowed even if other items are processing
                     >
                       <RefreshCw className="h-4 w-4" />
                     </Button>

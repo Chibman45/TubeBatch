@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Header } from '@/components/TubeBatch/Header';
 import { CsvUploader } from '@/components/TubeBatch/CsvUploader';
 import { DownloadQueue } from '@/components/TubeBatch/DownloadQueue';
@@ -36,46 +35,12 @@ export default function Home() {
     setItems(prev => prev.map(item => 
       item.id === id ? { ...item, status: 'pending', progress: 0, error: undefined } : item
     ));
+    // If the engine is already running, the useEffect will pick this up automatically.
+    // If not, it stays pending until "Start Batch" is clicked.
   };
 
-  const startBatch = async () => {
+  const startBatch = () => {
     setIsProcessing(true);
-    
-    const pendingItems = items.filter(item => item.status === 'pending' || item.status === 'failed');
-    
-    for (const item of pendingItems) {
-      // Set to downloading
-      setItems(prev => prev.map(it => 
-        it.id === item.id ? { ...it, status: 'downloading', progress: 0 } : it
-      ));
-
-      try {
-        // Step 1: Simulate Metadata Fetching
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        // Step 2: Simulate Download Progress
-        await simulateDownload(item.id, (progress) => {
-          setItems(prev => prev.map(it => 
-            it.id === item.id ? { ...it, progress } : it
-          ));
-        });
-
-        // Step 3: Complete
-        setItems(prev => prev.map(it => 
-          it.id === item.id ? { ...it, status: 'completed', progress: 100, size: `${(Math.random() * 50 + 10).toFixed(1)}MB` } : it
-        ));
-      } catch (err: any) {
-        setItems(prev => prev.map(it => 
-          it.id === item.id ? { ...it, status: 'failed', error: err.message || 'Unknown error' } : it
-        ));
-      }
-    }
-    
-    setIsProcessing(false);
-    toast({
-      title: "Batch Process Finished",
-      description: "The engine has processed all items in the current queue.",
-    });
   };
 
   const simulateDownload = (id: string, onProgress: (p: number) => void): Promise<void> => {
@@ -101,6 +66,58 @@ export default function Home() {
     });
   };
 
+  const processItem = useCallback(async (id: string) => {
+    // Set to downloading
+    setItems(prev => prev.map(it => 
+      it.id === id ? { ...it, status: 'downloading', progress: 0 } : it
+    ));
+
+    try {
+      // Step 1: Simulate Metadata Fetching
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Step 2: Simulate Download Progress
+      await simulateDownload(id, (progress) => {
+        setItems(prev => prev.map(it => 
+          it.id === id ? { ...it, progress } : it
+        ));
+      });
+
+      // Step 3: Complete
+      setItems(prev => prev.map(it => 
+        it.id === id ? { ...it, status: 'completed', progress: 100, size: `${(Math.random() * 50 + 10).toFixed(1)}MB` } : it
+      ));
+    } catch (err: any) {
+      setItems(prev => prev.map(it => 
+        it.id === id ? { ...it, status: 'failed', error: err.message || 'Unknown error' } : it
+      ));
+    }
+  }, []);
+
+  // Reactive Batch Engine
+  useEffect(() => {
+    if (!isProcessing) return;
+
+    // Sequential processing: find the first item that is pending
+    const pendingItem = items.find(i => i.status === 'pending');
+    const currentlyDownloadingCount = items.filter(i => i.status === 'downloading').length;
+
+    // Limit to 1 concurrent download for visual clarity in this demo
+    if (pendingItem && currentlyDownloadingCount < 1) {
+      processItem(pendingItem.id);
+    } else if (!pendingItem && currentlyDownloadingCount === 0) {
+      // If nothing is pending and nothing is downloading, check if we are actually done
+      const allDone = items.every(i => i.status === 'completed' || i.status === 'failed');
+      if (allDone && items.length > 0) {
+        setIsProcessing(false);
+        toast({
+          title: "Batch Process Finished",
+          description: "All items in the queue have been processed.",
+        });
+      }
+    }
+  }, [items, isProcessing, processItem, toast]);
+
   const downloadZip = async () => {
     const completedItems = items.filter(i => i.status === 'completed');
     if (completedItems.length === 0) return;
@@ -113,8 +130,6 @@ export default function Home() {
     try {
       const zip = new JSZip();
       
-      // Add each "video" to the zip
-      // In a real app, these would be the actual file blobs
       completedItems.forEach(item => {
         zip.file(`${item.title.replace(/[/\\?%*:|"<>]/g, '-')}.mp4`, `Simulated video content for: ${item.title}\nSource: ${item.url}`);
       });
