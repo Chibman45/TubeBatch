@@ -29,6 +29,7 @@ export default function Home() {
   const { toast } = useToast();
 
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(false);
 
   // 1. Production Authentication: Ensure every user has a private UID (Anonymous Login)
   useEffect(() => {
@@ -89,47 +90,65 @@ export default function Home() {
   const isProcessing = activeBatch?.status === 'PROCESSING';
 
   const handleUpload = async (newItems: VideoItem[]) => {
-    if (!user || !firestore) return;
-
-    // Create persistent batch record
-    const batchRef = await addDocumentNonBlocking(
-      collection(firestore, 'users', user.uid, 'downloadBatches'),
-      {
-        userId: user.uid,
-        status: 'PENDING',
-        totalVideos: newItems.length,
-        completedVideos: 0,
-        failedVideos: 0,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      }
-    );
-
-    if (batchRef) {
-      // Switch UI to the new batch immediately
-      setActiveBatchId(batchRef.id);
-      
-      // Persist individual video entries
-      newItems.forEach((item) => {
-        addDocumentNonBlocking(
-          collection(firestore, 'users', user.uid, 'downloadBatches', batchRef.id, 'videoDownloadEntries'),
-          {
-            batchId: batchRef.id,
-            userId: user.uid,
-            originalUrl: item.url,
-            desiredTitle: item.title,
-            status: 'pending',
-            progress: 0,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
-          }
-        );
-      });
-
+    if (!user || !firestore) {
       toast({
-        title: "Batch Created",
-        description: `Successfully uploaded ${newItems.length} videos.`,
+        variant: "destructive",
+        title: "Connection Pending",
+        description: "Please wait a moment for the cloud engine to initialize.",
       });
+      return;
+    }
+
+    setIsInitializing(true);
+    try {
+      // Create persistent batch record
+      const batchRef = await addDocumentNonBlocking(
+        collection(firestore, 'users', user.uid, 'downloadBatches'),
+        {
+          userId: user.uid,
+          status: 'PENDING',
+          totalVideos: newItems.length,
+          completedVideos: 0,
+          failedVideos: 0,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }
+      );
+
+      if (batchRef) {
+        // Switch UI to the new batch immediately
+        setActiveBatchId(batchRef.id);
+        
+        // Persist individual video entries
+        newItems.forEach((item) => {
+          addDocumentNonBlocking(
+            collection(firestore, 'users', user.uid, 'downloadBatches', batchRef.id, 'videoDownloadEntries'),
+            {
+              batchId: batchRef.id,
+              userId: user.uid,
+              originalUrl: item.url,
+              desiredTitle: item.title,
+              status: 'pending',
+              progress: 0,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            }
+          );
+        });
+
+        toast({
+          title: "Queue Created",
+          description: `Successfully loaded ${newItems.length} videos into your cloud workspace.`,
+        });
+      }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: "Could not create the download batch in the database.",
+      });
+    } finally {
+      setIsInitializing(false);
     }
   };
 
@@ -170,7 +189,8 @@ export default function Home() {
         } else {
           onProgress(progress);
         }
-        if (Math.random() < 0.005) {
+        // Simulated random failure
+        if (Math.random() < 0.01) {
           clearInterval(interval);
           reject(new Error("Stream connection lost."));
         }
@@ -248,10 +268,11 @@ export default function Home() {
     }
   };
 
-  if (isUserLoading || isBatchesLoading) {
+  if (isUserLoading || isBatchesLoading || isInitializing) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-accent" />
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-accent" />
+        <p className="text-muted-foreground animate-pulse text-sm">Loading your workspace...</p>
       </div>
     );
   }
@@ -267,7 +288,7 @@ export default function Home() {
             <div className="text-center mb-12">
               <h2 className="text-4xl font-extrabold mb-4 tracking-tight">Batch download made simple.</h2>
               <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-                Upload a CSV and let our cloud-backed engine handle your library.
+                Upload any CSV containing YouTube links and let our engine handle the rest.
               </p>
             </div>
             <CsvUploader onUpload={handleUpload} />
