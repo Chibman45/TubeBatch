@@ -51,7 +51,7 @@ export default function Home() {
 
   const { data: batches, isLoading: isBatchesLoading } = useCollection(batchesQuery);
 
-  // Restore latest batch ID automatically if none is active
+  // Restore latest batch ID automatically if none is active and we're not starting a new one
   useEffect(() => {
     if (batches && batches.length > 0 && !activeBatchId && !isInitializing) {
       setActiveBatchId(batches[0].id);
@@ -116,7 +116,7 @@ export default function Home() {
       );
 
       if (batchRef) {
-        // Switch view to the new batch immediately to show the Queue UI
+        // Switch view to the new batch immediately
         setActiveBatchId(batchRef.id);
         
         // Persist video entries in the background
@@ -148,8 +148,8 @@ export default function Home() {
         description: "Could not sync data with the database.",
       });
     } finally {
-      // Delay turning off initialization state slightly to allow ID to settle
-      setTimeout(() => setIsInitializing(false), 500);
+      // Delay turning off initialization state slightly to allow ID to settle and switch views
+      setTimeout(() => setIsInitializing(false), 800);
     }
   };
 
@@ -236,7 +236,7 @@ export default function Home() {
       processItem(pendingItem.id);
     } else if (!pendingItem && currentlyDownloadingCount === 0) {
       const allDone = items.every(i => i.status === 'completed' || i.status === 'failed');
-      if (allDone) {
+      if (allDone && items.length > 0) {
         updateDocumentNonBlocking(
           doc(firestore, 'users', user.uid, 'downloadBatches', activeBatchId),
           { status: 'COMPLETED', endTime: serverTimestamp(), updatedAt: serverTimestamp() }
@@ -303,6 +303,7 @@ export default function Home() {
               onRetry={retryItem}
               onDownloadZip={downloadZip}
               isProcessing={isProcessing}
+              isCloudSyncing={isEntriesLoading && items.length === 0}
             />
           </div>
         )}

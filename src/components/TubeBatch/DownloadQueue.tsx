@@ -1,3 +1,4 @@
+
 "use client";
 
 import { VideoItem } from '@/app/lib/types';
@@ -23,6 +24,7 @@ interface DownloadQueueProps {
   onRetry: (id: string) => void;
   onDownloadZip: () => void;
   isProcessing: boolean;
+  isCloudSyncing?: boolean;
 }
 
 export function DownloadQueue({ 
@@ -32,15 +34,16 @@ export function DownloadQueue({
   onRemove,
   onRetry,
   onDownloadZip,
-  isProcessing 
+  isProcessing,
+  isCloudSyncing
 }: DownloadQueueProps) {
-  // If items are empty, we might be in the middle of a Firestore sync
-  if (items.length === 0) {
+  // If cloud syncing is true or items are empty, show initial loading
+  if (isCloudSyncing || (items.length === 0 && !isProcessing)) {
     return (
-      <div className="w-full max-w-4xl mx-auto py-20 text-center">
+      <div className="w-full max-w-4xl mx-auto py-20 text-center animate-pulse">
         <Loader2 className="w-12 h-12 animate-spin text-accent mx-auto mb-4" />
-        <h3 className="text-xl font-bold">Initializing Batch...</h3>
-        <p className="text-muted-foreground">Synchronizing your list with the cloud engine.</p>
+        <h3 className="text-xl font-bold">Synchronizing Queue...</h3>
+        <p className="text-muted-foreground">Building your download list in the cloud.</p>
       </div>
     );
   }
